@@ -1,5 +1,13 @@
 # schemasketch-render
 
+[![Latest version](https://img.shields.io/npm/v/schemasketch-render?label=version)](https://www.npmjs.com/package/schemasketch-render)
+[![Tests](https://github.com/SchemaSketch-dev/schemasketch-render/actions/workflows/check.yml/badge.svg?branch=main)](https://github.com/SchemaSketch-dev/schemasketch-render/actions/workflows/check.yml)
+[![Downloads](https://img.shields.io/npm/dm/schemasketch-render)](https://www.npmjs.com/package/schemasketch-render)
+[![Node](https://img.shields.io/node/v/schemasketch-render)](package.json)
+[![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](package.json)
+[![License](https://img.shields.io/npm/l/schemasketch-render)](LICENSE)
+[![SchemaSketch status](https://img.shields.io/endpoint?url=https%3A%2F%2Fstatus.schemasketch.dev%2Fbadge.json)](https://status.schemasketch.dev)
+
 Turn a database schema into a standalone SVG image. Give it DBML (or an already parsed
 schema) and get back SVG text: tables, columns, keys, relationship lines and table
 groups. It's the same drawing that [SchemaSketch](https://schemasketch.dev) serves for

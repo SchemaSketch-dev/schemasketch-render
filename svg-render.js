@@ -9,7 +9,7 @@
 //
 // Drawing constants mirror frontend/renderer.js (the interactive editor).
 
-export const RENDERER_VERSION = '1.0.0';
+export const RENDERER_VERSION = '1.0.1';
 
 const ROW_H = 26;
 const HEADER_H = 32;
