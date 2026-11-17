@@ -167,3 +167,49 @@ test('table groups list schema-qualified tables', () => {
   const { tableGroups } = parseSchema(SCHEMAS + '\nTableGroup billing {\n  billing.invoices\n  billing.payments\n}');
   assert.deepEqual(tableGroups[0].tables, ['billing.invoices', 'billing.payments']);
 });
+
+// ---- Named relationships (Ref name: …, Ref name { … }) ----
+
+const TWO = 'Table a {\n  id int [pk]\n}\nTable b {\n  id int [pk]\n  a_id int\n}\n';
+
+test('a named Ref line is kept, with its name', () => {
+  const { refs, errors } = parseSchema(TWO + 'Ref fk_b_a: b.a_id > a.id');
+  assert.deepEqual(errors, []);
+  assert.equal(refs.length, 1);
+  assert.deepEqual(
+    { ...refs[0] },
+    { fromTable: 'b', fromColumn: 'a_id', toTable: 'a', toColumn: 'id', type: '>', name: 'fk_b_a' },
+  );
+});
+
+test('a named Ref line followed by a table does not swallow that table', () => {
+  const { tables, refs } = parseSchema('Table a {\n  id int [pk]\n}\nRef fk_c_a: c.a_id > a.id\nTable c {\n  id int [pk]\n  a_id int\n}');
+  assert.deepEqual(tables.map((t) => t.name), ['a', 'c']);
+  assert.equal(tables[1].columns.length, 2);
+  assert.equal(refs.length, 1);
+  assert.equal(refs[0].name, 'fk_c_a');
+});
+
+test('a named Ref keeps its settings', () => {
+  const { refs } = parseSchema(TWO + 'Ref fk_b_a: b.a_id > a.id [delete: cascade]');
+  assert.equal(refs[0].onDelete, 'cascade');
+  assert.equal(refs[0].name, 'fk_b_a');
+});
+
+test('a quoted Ref name', () => {
+  const { refs } = parseSchema(TWO + 'Ref "b to a": b.a_id > a.id');
+  assert.equal(refs.length, 1);
+  assert.equal(refs[0].name, 'b to a');
+});
+
+test('a named Ref block keeps the name on its refs', () => {
+  const { refs } = parseSchema(TWO + 'Ref fk_b_a {\n  b.a_id > a.id\n}');
+  assert.equal(refs.length, 1);
+  assert.equal(refs[0].name, 'fk_b_a');
+});
+
+test('unnamed refs have no name', () => {
+  const { refs } = parseSchema(TWO + 'Ref: b.a_id > a.id');
+  assert.equal(refs.length, 1);
+  assert.equal('name' in refs[0], false);
+});

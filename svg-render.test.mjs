@@ -238,6 +238,12 @@ test('refs between schema-qualified tables are drawn', () => {
   assert.equal((svg.match(/<path class="ss-ref-line"/g) || []).length, 1);
 });
 
+test('named refs are drawn', () => {
+  const schema = parseSchema('Table a {\n  id int [pk]\n}\nTable b {\n  a_id int\n}\nRef fk_b_a: b.a_id > a.id');
+  const svg = renderSvg(schema, {}, {});
+  assert.equal((svg.match(/<path class="ss-ref-line"/g) || []).length, 1);
+});
+
 test('stale refs are skipped without throwing', () => {
   const schema = parseSchema(PAIR);
   schema.refs.push(

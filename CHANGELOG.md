@@ -3,6 +3,13 @@
 `schemasketch-render`, the SchemaSketch SVG renderer. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## 1.0.3 (2026-11-17)
+
+- Fixed: named relationships (`Ref fk_orders_customer: orders.customer_id > customers.id`,
+  quoted names, and `Ref name { ... }` blocks) were dropped, so their lines weren't drawn.
+  A named `Ref` line followed by a table also swallowed that table. Refs now keep their
+  name (`ref.name`).
+
 ## 1.0.2 (2026-11-17)
 
 - Fixed: relationships between schema-qualified tables (`public.users`,

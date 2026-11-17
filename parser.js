@@ -156,7 +156,7 @@ function normalizeRefAction(value) {
   return ['cascade', 'restrict', 'set null', 'set default', 'no action'].includes(s) ? s : null;
 }
 
-function parseRefLine(body, refs) {
+function parseRefLine(body, refs, name) {
   // body like: table1.col > table2.col   or  table1.col <> table2.col
   // optionally followed by a trailing [delete: cascade, update: restrict] settings bracket.
   let settingsStr = null;
@@ -171,6 +171,7 @@ function parseRefLine(body, refs) {
   const type = m[2];
   const to = parseRefEndpoint(m[3]);
   const ref = { fromTable: from.table, fromColumn: from.column, toTable: to.table, toColumn: to.column, type };
+  if (name) ref.name = name;
   if (settingsStr) {
     const parsed = parseSettingsList(settingsStr);
     if (parsed.delete !== undefined) ref.onDelete = normalizeRefAction(parsed.delete);
@@ -200,17 +201,23 @@ export function parseSchema(source) {
     const afterKeyword = match.index + keyword.length;
 
     if (keyword === 'Ref') {
-      // Two forms: "Ref: a.b > c.d"  or  "Ref name { ... }" or "Ref { ... }"
-      const restOfLine = text.slice(afterKeyword, text.indexOf('\n', afterKeyword) === -1 ? text.length : text.indexOf('\n', afterKeyword));
-      const colonInline = restOfLine.match(/^\s*:\s*(.+)$/);
-      const braceIdx = text.indexOf('{', afterKeyword);
-      const newlineIdx = text.indexOf('\n', afterKeyword);
-      if (colonInline && (braceIdx === -1 || (newlineIdx !== -1 && newlineIdx < braceIdx))) {
-        parseRefLine(colonInline[1].trim(), refs);
+      // "Ref: a.b > c.d", "Ref name: a.b > c.d", "Ref name { ... }" or "Ref { ... }".
+      // The name is optional, bare or "quoted", and the { must be on the Ref's own
+      // line: otherwise "Ref name: ..." would reach forward into the next table.
+      const lineEnd = text.indexOf('\n', afterKeyword);
+      const restOfLine = text.slice(afterKeyword, lineEnd === -1 ? text.length : lineEnd);
+      const NAME = '(?:"([^"]*)"|([A-Za-z_][\\w]*))';
+      const colonInline = restOfLine.match(new RegExp(`^\\s*(?:${NAME}\\s*)?:\\s*(.+)$`));
+      if (colonInline) {
+        const name = colonInline[1] ?? colonInline[2];
+        parseRefLine(colonInline[3].trim(), refs, name);
         keywordRe.lastIndex = afterKeyword + colonInline[0].length;
         continue;
       }
-      if (braceIdx !== -1) {
+      const blockHead = restOfLine.match(new RegExp(`^\\s*(?:${NAME}\\s*)?\\{`));
+      if (blockHead) {
+        const name = blockHead[1] ?? blockHead[2];
+        const braceIdx = afterKeyword + blockHead[0].length - 1;
         const closeIdx = findMatchingBrace(text, braceIdx);
         if (closeIdx === -1) {
           errors.push('Unclosed Ref block');
@@ -219,7 +226,7 @@ export function parseSchema(source) {
         const inner = text.slice(braceIdx + 1, closeIdx);
         for (const line of inner.split('\n')) {
           const t = line.trim();
-          if (t) parseRefLine(t, refs);
+          if (t) parseRefLine(t, refs, name);
         }
         keywordRe.lastIndex = closeIdx + 1;
         continue;
