@@ -1,0 +1,39 @@
+name: publish
+
+# Runs when a release tag (vX.Y.Z) is pushed. Publishes to npm through trusted
+# publishing (OIDC, no token stored anywhere) with provenance, as a *staged*
+# release: it goes live only after a maintainer approves it with 2FA on
+# npmjs.com (Account settings -> Staged Packages) or with `npm stage approve`.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write   # create the GitHub release
+  id-token: write   # npm trusted publishing and provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      - name: Tag matches package.json
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          [ "${GITHUB_REF_NAME#v}" = "$version" ] || { echo "Tag $GITHUB_REF_NAME but package.json says $version"; exit 1; }
+          grep -q "^## $version (" CHANGELOG.md || { echo "CHANGELOG.md has no $version section"; exit 1; }
+      - run: npm install -g npm@12
+      - run: npm test
+      - name: Stage on npm (approve on npmjs.com to release)
+        run: npm stage publish --provenance --access public
+      - name: GitHub release with the changelog section
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '$0 ~ "^## "v" \\(" {f=1;next} /^## /{f=0} f' CHANGELOG.md > notes.md
+          gh release create "$GITHUB_REF_NAME" --title "$version" --notes-file notes.md --verify-tag

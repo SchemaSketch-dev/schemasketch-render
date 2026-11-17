@@ -1,0 +1,43 @@
+{
+  "name": "schemasketch-render",
+  "version": "1.0.0",
+  "description": "Render a database schema (DBML or a parsed schema) as a standalone SVG image. No dependencies, no browser, runs in Node 18+.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "svg-render.js",
+    "parser.js",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test index.test.mjs",
+    "prepublishOnly": "npm test"
+  },
+  "license": "MIT",
+  "author": "Stelios Ioannides",
+  "homepage": "https://schemasketch.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SchemaSketch-dev/schemasketch-render.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SchemaSketch-dev/schemasketch-render/issues"
+  },
+  "keywords": [
+    "dbml",
+    "svg",
+    "erd",
+    "database-diagram",
+    "schema",
+    "schemasketch"
+  ]
+}
