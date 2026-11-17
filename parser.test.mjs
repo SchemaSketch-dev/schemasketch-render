@@ -242,3 +242,81 @@ test('composite refs with quoted columns', () => {
   assert.deepEqual(refs[0].fromColumns, ['a_id', 'a_k']);
   assert.deepEqual(refs[0].toColumns, ['id', 'k']);
 });
+
+// ---- TablePartial (shared columns injected with ~name) ----
+// Spec: the table's own fields, settings and indexes win; between partials the
+// last injected wins. Injected columns sit where their ~name line is.
+
+const PARTIALS = `
+TablePartial base [headercolor: #ff0000] {
+  id int [pk]
+  created_at timestamp
+}
+TablePartial soft_delete {
+  deleted_at timestamp
+}
+`;
+
+const cols = (table) => table.columns.map((c) => `${c.name}:${c.type}`);
+
+test('partials inject their columns where the ~name line is', () => {
+  const { tables, errors } = parseSchema(PARTIALS + 'Table users {\n  ~base\n  name varchar\n  ~soft_delete\n}');
+  assert.deepEqual(errors, []);
+  assert.deepEqual(cols(tables[0]), ['id:int', 'created_at:timestamp', 'name:varchar', 'deleted_at:timestamp']);
+  assert.equal(tables[0].columns[0].pk, true);
+});
+
+test('a partial is not a table of its own', () => {
+  const { tables } = parseSchema(PARTIALS + 'Table users {\n  ~base\n}');
+  assert.deepEqual(tables.map((t) => t.name), ['users']);
+});
+
+test("the table's own column wins over a partial's", () => {
+  const { tables } = parseSchema(PARTIALS + 'Table users {\n  ~base\n  id bigint [pk, increment]\n}');
+  assert.deepEqual(cols(tables[0]), ['id:bigint', 'created_at:timestamp']);
+  assert.equal(tables[0].columns[0].increment, true);
+});
+
+test('between partials, the last injected wins', () => {
+  const { tables } = parseSchema(PARTIALS + 'TablePartial wide_id {\n  id uuid [pk]\n}\nTable users {\n  ~base\n  ~wide_id\n}');
+  assert.deepEqual(cols(tables[0]), ['id:uuid', 'created_at:timestamp']);
+});
+
+test('table settings come from a partial unless the table sets them', () => {
+  const inherited = parseSchema(PARTIALS + 'Table users {\n  ~base\n}');
+  assert.equal(inherited.tables[0].color, '#ff0000');
+  const own = parseSchema(PARTIALS + 'Table users [headercolor: #0000ff] {\n  ~base\n}');
+  assert.equal(own.tables[0].color, '#0000ff');
+});
+
+test('partial indexes are merged into the table', () => {
+  const { tables } = parseSchema('TablePartial with_email {\n  email varchar\n  indexes {\n    email [unique]\n  }\n}\nTable users {\n  id int [pk]\n  ~with_email\n}');
+  assert.deepEqual(tables[0].indexes.map((i) => ({ columns: i.columns, unique: i.unique })), [{ columns: ['email'], unique: true }]);
+});
+
+test('an inline ref in a partial applies to every table that injects it', () => {
+  const { refs } = parseSchema('Table users {\n  id int [pk]\n}\nTablePartial owned {\n  owner_id int [ref: > users.id]\n}\nTable posts {\n  id int [pk]\n  ~owned\n}\nTable files {\n  id int [pk]\n  ~owned\n}');
+  assert.deepEqual(refs.map((r) => `${r.fromTable}.${r.fromColumn}>${r.toTable}.${r.toColumn}`).sort(), ['files.owner_id>users.id', 'posts.owner_id>users.id']);
+});
+
+test('a partial can be defined after the table that uses it', () => {
+  const { tables, errors } = parseSchema('Table users {\n  ~base\n  name varchar\n}\n' + PARTIALS);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(cols(tables[0]), ['id:int', 'created_at:timestamp', 'name:varchar']);
+});
+
+test('tables that inject the same partial get their own copies of its columns', () => {
+  const { tables } = parseSchema(PARTIALS + 'Table a {\n  ~base\n}\nTable b {\n  ~base\n}');
+  tables[0].columns[0].note = 'changed';
+  assert.equal(tables[1].columns[0].note, null);
+});
+
+test('an unknown partial is an error, not silently dropped', () => {
+  const { errors } = parseSchema('Table users {\n  ~missing\n  id int\n}');
+  assert.ok(errors.some((e) => /unknown TablePartial "missing"/.test(e)), JSON.stringify(errors));
+});
+
+test('a partial that injects another partial is an error', () => {
+  const { errors } = parseSchema(PARTIALS + 'TablePartial nested {\n  ~base\n}\nTable t {\n  ~nested\n}');
+  assert.ok(errors.some((e) => /TablePartial nested/.test(e)), JSON.stringify(errors));
+});

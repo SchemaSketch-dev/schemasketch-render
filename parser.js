@@ -184,6 +184,63 @@ function parseRefLine(body, refs, name) {
   refs.push(ref);
 }
 
+// Precedence (DBML spec): the table's own columns, settings and indexes win;
+// between partials, the last injected wins. A column stays where it first appears.
+function applyPartials(table, injections, partials, errors) {
+  const ownColor = table.color;
+  const ownNote = table.note;
+  const sequence = []; // { item, own } in source order
+  const findPartial = (inj) => {
+    const partial = partials.get(inj.name.toLowerCase());
+    if (!partial) {
+      errors.push(`Table ${table.name} uses unknown TablePartial "${inj.name}"`);
+      return null;
+    }
+    return partial;
+  };
+  const used = [];
+  let next = 0;
+  const own = table.columns;
+  for (let i = 0; i <= own.length; i++) {
+    while (next < injections.length && injections[next].at === i) {
+      const partial = findPartial(injections[next++]);
+      if (!partial) continue;
+      used.push(partial);
+      for (const col of partial.columns) sequence.push({ item: col, own: false });
+    }
+    if (i < own.length) sequence.push({ item: own[i], own: true });
+  }
+
+  // Keep each key at its first position; the table's own entry always wins,
+  // otherwise the last partial's does.
+  const merge = (entries, keyOf) => {
+    const order = [];
+    const winner = new Map();
+    for (const entry of entries) {
+      const key = keyOf(entry.item);
+      const current = winner.get(key);
+      if (!current) order.push(key);
+      if (current?.own) continue;
+      winner.set(key, entry);
+    }
+    return order.map((k) => winner.get(k).item);
+  };
+
+  table.columns = merge(sequence, (c) => c.name.toLowerCase()).map((c) => ({ ...c }));
+  const indexEntries = [
+    ...used.flatMap((p) => p.indexes.map((idx) => ({ item: idx, own: false }))),
+    ...table.indexes.map((idx) => ({ item: idx, own: true })),
+  ];
+  table.indexes = merge(indexEntries, (idx) => idx.columns.join(',').toLowerCase())
+    .map((idx) => ({ ...idx, columns: [...idx.columns] }));
+
+  // Settings: the table's own, else the last partial that sets one.
+  for (const p of used) {
+    if (p.color && !ownColor) table.color = p.color;
+    if (p.note && !ownNote) table.note = p.note;
+  }
+}
+
 export function parseSchema(source) {
   const { replaced, store: tqStore } = extractTripleQuoted(source || '');
   const text = stripComments(replaced);
@@ -195,7 +252,8 @@ export function parseSchema(source) {
   const tableByLowerName = new Map();
 
   // Find all top-level keyword blocks / statements.
-  const keywordRe = /\b(Table|Enum|Ref|TableGroup|Project)\b/g;
+  const keywordRe = /\b(TablePartial|Table|Enum|Ref|TableGroup|Project)\b/g;
+  const partials = new Map(); // lower name -> partial (same shape as a table)
   let match;
   const consumedUntil = { pos: 0 };
 
@@ -301,9 +359,10 @@ export function parseSchema(source) {
       continue;
     }
 
-    if (keyword === 'Table') {
+    if (keyword === 'Table' || keyword === 'TablePartial') {
+      const isPartial = keyword === 'TablePartial';
       const braceIdx = text.indexOf('{', afterKeyword);
-      if (braceIdx === -1) { errors.push('Table missing {'); continue; }
+      if (braceIdx === -1) { errors.push(`${keyword} missing {`); continue; }
       const header = text.slice(afterKeyword, braceIdx).trim();
       // name [as alias] [settings]
       let name = header;
@@ -326,6 +385,7 @@ export function parseSchema(source) {
       const inner = text.slice(braceIdx + 1, closeIdx);
 
       const table = { name, alias, columns: [], indexes: [], note: null, color: null };
+      const injections = []; // ~partial lines: { name, at: index into table.columns }
       if (settingsStr) {
         const s = parseSettingsList(settingsStr);
         if (s.headercolor) table.color = s.headercolor;
@@ -337,6 +397,13 @@ export function parseSchema(source) {
       for (let li = 0; li < lines.length; li++) {
         const line = lines[li].trim();
         if (!line) continue;
+        const inject = line.match(/^~\s*("[^"]+"|[\w.]+)$/);
+        if (inject) {
+          const partialName = inject[1].replace(/"/g, '');
+          if (isPartial) errors.push(`TablePartial ${name} injects ~${partialName}: a partial can't include another partial`);
+          else injections.push({ name: partialName, at: table.columns.length });
+          continue;
+        }
         if (/^Note\s*:/i.test(line)) {
           const nm = line.match(/^Note\s*:\s*(.+)$/i);
           if (nm) table.note = unquote(nm[1].trim());
@@ -408,12 +475,25 @@ export function parseSchema(source) {
         table.columns.push(col);
       }
 
-      tables.push(table);
-      tableByLowerName.set(name.toLowerCase(), table);
-      if (alias) tableByLowerName.set(alias.toLowerCase(), table);
+      if (isPartial) {
+        partials.set(name.toLowerCase(), table);
+      } else {
+        if (injections.length) table._injections = injections;
+        tables.push(table);
+        tableByLowerName.set(name.toLowerCase(), table);
+        if (alias) tableByLowerName.set(alias.toLowerCase(), table);
+      }
       keywordRe.lastIndex = closeIdx + 1;
       continue;
     }
+  }
+
+  // Merge TablePartials (~name) into the tables that inject them. Partials may be
+  // defined anywhere, so this runs after everything is parsed, and before inline
+  // refs are resolved so a ref inside a partial applies to every table using it.
+  for (const table of tables) {
+    if (table._injections) applyPartials(table, table._injections, partials, errors);
+    delete table._injections;
   }
 
   // Resolve inline column refs (col [ref: > other.col]) into the refs array.

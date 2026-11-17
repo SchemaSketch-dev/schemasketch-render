@@ -3,6 +3,13 @@
 `schemasketch-render`, the SchemaSketch SVG renderer. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## 1.0.5 (2026-11-17)
+
+- `TablePartial` support: shared columns, indexes and settings injected into tables with
+  `~name`, following the DBML rules (the table's own definitions win; between partials, the
+  last injected wins). An unknown partial, or a partial that injects another, is reported as
+  an error. Before, partials were ignored without any error.
+
 ## 1.0.4 (2026-11-17)
 
 - Composite relationships (`Ref: lines.(order_id, region) > orders.(id, region)`) keep every
