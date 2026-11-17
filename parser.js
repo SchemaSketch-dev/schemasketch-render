@@ -137,16 +137,17 @@ function findMatchingBrace(text, openIdx) {
 
 function parseRefEndpoint(str) {
   str = str.trim();
-  // schema.table.column or table.column, optionally table.(col1,col2) - composite not supported, take first
+  // schema.table.column or table.column, optionally table.(col1,col2) - composite not supported, take first.
+  // The table keeps its schema ("billing.invoices"); resolveName() matches it to a declared table.
   const compMatch = str.match(/^([\w."]+)\.\(([^)]+)\)$/);
   if (compMatch) {
-    const table = compMatch[1].split('.').pop().replace(/"/g, '');
+    const table = compMatch[1].replace(/"/g, '');
     const col = splitTopLevel(compMatch[2], ',')[0].replace(/"/g, '');
     return { table, column: col };
   }
   const parts = str.split('.').map((p) => p.replace(/"/g, ''));
   const column = parts.pop();
-  const table = parts.pop();
+  const table = parts.join('.');
   return { table, column };
 }
 
@@ -418,8 +419,11 @@ export function parseSchema(source) {
   }
 
   // Normalize ref table names against actual table names/aliases (case-insensitive).
+  // "public" is the default schema, so "users" and "public.users" name the same table.
   function resolveName(n) {
-    const t = tableByLowerName.get((n || '').toLowerCase());
+    const key = (n || '').toLowerCase();
+    const t = tableByLowerName.get(key)
+      || (key.startsWith('public.') ? tableByLowerName.get(key.slice(7)) : tableByLowerName.get(`public.${key}`));
     return t ? t.name : n;
   }
   for (const ref of refs) {

@@ -232,6 +232,12 @@ test('markers follow cardinality and are defined once with ss- ids', () => {
   assertBalanced(both);
 });
 
+test('refs between schema-qualified tables are drawn', () => {
+  const schema = parseSchema('Table public.users {\n  id int [pk]\n}\nTable billing.invoices {\n  id int [pk]\n  user_id int [ref: > public.users.id]\n}');
+  const svg = renderSvg(schema, {}, {});
+  assert.equal((svg.match(/<path class="ss-ref-line"/g) || []).length, 1);
+});
+
 test('stale refs are skipped without throwing', () => {
   const schema = parseSchema(PAIR);
   schema.refs.push(

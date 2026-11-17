@@ -1,6 +1,7 @@
-// Tests for the DBML parser the renderer draws from. parser.js is copied from
-// frontend/ (see scripts/sync.mjs); these tests ship with the package so the
-// public repository checks the parser on its own.
+// Tests for the DBML parser (frontend/parser.js), which the editor, the exports,
+// the MCP server and schemasketch-render all use. packages/schemasketch-render/
+// scripts/sync.mjs copies this file next to the package's parser.js, so the
+// public schemasketch-render repository runs it too.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSchema } from './parser.js';
@@ -84,4 +85,85 @@ test('empty and whitespace-only input give an empty schema, not a crash', () => 
     assert.deepEqual(schema.refs, []);
     assert.deepEqual(schema.errors, []);
   }
+});
+
+// ---- Schemas (Postgres-style schema.table names) ----
+
+const SCHEMAS = `
+Table public.users {
+  id int [pk]
+}
+
+Table billing.invoices {
+  id int [pk]
+  user_id int [ref: > public.users.id]
+}
+
+Table billing.payments {
+  id int [pk]
+  invoice_id int
+}
+
+Ref: billing.payments.invoice_id > billing.invoices.id
+`;
+
+const ref = (refs, fromTable, fromColumn) =>
+  refs.find((r) => r.fromTable === fromTable && r.fromColumn === fromColumn);
+
+test('inline refs between schema-qualified tables keep the schema', () => {
+  const { refs, errors } = parseSchema(SCHEMAS);
+  assert.deepEqual(errors, []);
+  const r = ref(refs, 'billing.invoices', 'user_id');
+  assert.equal(r.toTable, 'public.users');
+  assert.equal(r.toColumn, 'id');
+});
+
+test('standalone Ref lines between schema-qualified tables keep the schema', () => {
+  const r = ref(parseSchema(SCHEMAS).refs, 'billing.payments', 'invoice_id');
+  assert.ok(r, 'the ref should keep billing.payments as its from-table');
+  assert.equal(r.toTable, 'billing.invoices');
+});
+
+test('public is the default schema: users and public.users are the same table', () => {
+  const qualifiedTable = parseSchema('Table public.users {\n  id int [pk]\n}\nTable posts {\n  user_id int [ref: > users.id]\n}');
+  assert.equal(ref(qualifiedTable.refs, 'posts', 'user_id').toTable, 'public.users');
+
+  const plainTable = parseSchema('Table users {\n  id int [pk]\n}\nTable posts {\n  user_id int [ref: > public.users.id]\n}');
+  assert.equal(ref(plainTable.refs, 'posts', 'user_id').toTable, 'users');
+});
+
+test('the same table name in two schemas: each ref goes to the schema it names', () => {
+  const { refs } = parseSchema(`
+Table public.users {
+  id int [pk]
+}
+Table audit.users {
+  id int [pk]
+}
+Table audit.events {
+  id int [pk]
+  actor_id int [ref: > audit.users.id]
+  subject_id int [ref: > public.users.id]
+}`);
+  assert.equal(ref(refs, 'audit.events', 'actor_id').toTable, 'audit.users');
+  assert.equal(ref(refs, 'audit.events', 'subject_id').toTable, 'public.users');
+});
+
+test('quoted schema and table names in refs', () => {
+  const { refs } = parseSchema('Table "billing"."invoices" {\n  id int [pk]\n}\nTable "billing"."lines" {\n  invoice_id int\n}\nRef: "billing"."lines".invoice_id > "billing"."invoices".id');
+  const r = ref(refs, 'billing.lines', 'invoice_id');
+  assert.ok(r, 'the ref should resolve billing.lines');
+  assert.equal(r.toTable, 'billing.invoices');
+});
+
+test('schema-qualified composite refs keep the schema', () => {
+  const { refs } = parseSchema('Table sales.orders {\n  id int\n  region int\n}\nTable sales.lines {\n  order_id int\n  region int\n}\nRef: sales.lines.(order_id, region) > sales.orders.(id, region)');
+  const r = ref(refs, 'sales.lines', 'order_id');
+  assert.ok(r, 'the ref should resolve sales.lines');
+  assert.equal(r.toTable, 'sales.orders');
+});
+
+test('table groups list schema-qualified tables', () => {
+  const { tableGroups } = parseSchema(SCHEMAS + '\nTableGroup billing {\n  billing.invoices\n  billing.payments\n}');
+  assert.deepEqual(tableGroups[0].tables, ['billing.invoices', 'billing.payments']);
 });
