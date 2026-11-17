@@ -137,18 +137,18 @@ function findMatchingBrace(text, openIdx) {
 
 function parseRefEndpoint(str) {
   str = str.trim();
-  // schema.table.column or table.column, optionally table.(col1,col2) - composite not supported, take first.
+  // schema.table.column, table.column, or a composite table.(col1, col2).
   // The table keeps its schema ("billing.invoices"); resolveName() matches it to a declared table.
   const compMatch = str.match(/^([\w."]+)\.\(([^)]+)\)$/);
   if (compMatch) {
     const table = compMatch[1].replace(/"/g, '');
-    const col = splitTopLevel(compMatch[2], ',')[0].replace(/"/g, '');
-    return { table, column: col };
+    const columns = splitTopLevel(compMatch[2], ',').map((c) => c.trim().replace(/"/g, '')).filter(Boolean);
+    return { table, column: columns[0], columns };
   }
   const parts = str.split('.').map((p) => p.replace(/"/g, ''));
   const column = parts.pop();
   const table = parts.join('.');
-  return { table, column };
+  return { table, column, columns: [column] };
 }
 
 function normalizeRefAction(value) {
@@ -170,7 +170,11 @@ function parseRefLine(body, refs, name) {
   const from = parseRefEndpoint(m[1]);
   const type = m[2];
   const to = parseRefEndpoint(m[3]);
-  const ref = { fromTable: from.table, fromColumn: from.column, toTable: to.table, toColumn: to.column, type };
+  // fromColumn/toColumn are the first column; fromColumns/toColumns list them all (composite refs).
+  const ref = {
+    fromTable: from.table, fromColumn: from.column, toTable: to.table, toColumn: to.column, type,
+    fromColumns: from.columns, toColumns: to.columns,
+  };
   if (name) ref.name = name;
   if (settingsStr) {
     const parsed = parseSettingsList(settingsStr);
@@ -419,7 +423,10 @@ export function parseSchema(source) {
         const m = col.inlineRef.match(/^(<>|>|<|-)\s*(.+)$/);
         if (m) {
           const to = parseRefEndpoint(m[2]);
-          refs.push({ fromTable: table.name, fromColumn: col.name, toTable: to.table, toColumn: to.column, type: m[1] });
+          refs.push({
+            fromTable: table.name, fromColumn: col.name, toTable: to.table, toColumn: to.column, type: m[1],
+            fromColumns: [col.name], toColumns: to.columns,
+          });
         }
       }
     }

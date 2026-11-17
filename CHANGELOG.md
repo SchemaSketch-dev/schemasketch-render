@@ -3,6 +3,13 @@
 `schemasketch-render`, the SchemaSketch SVG renderer. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## 1.0.4 (2026-11-17)
+
+- Composite relationships (`Ref: lines.(order_id, region) > orders.(id, region)`) keep every
+  column: refs now have `fromColumns` and `toColumns` arrays. `fromColumn`/`toColumn` stay as
+  the first column, so existing code keeps working. The line is drawn from the first column,
+  as before.
+
 ## 1.0.3 (2026-11-17)
 
 - Fixed: named relationships (`Ref fk_orders_customer: orders.customer_id > customers.id`,

@@ -1,6 +1,6 @@
 {
   "name": "schemasketch-render",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Render a database schema (DBML or a parsed schema) as a standalone SVG image. No dependencies, no browser, runs in Node 18+.",
   "type": "module",
   "main": "index.js",

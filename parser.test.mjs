@@ -59,7 +59,7 @@ test('inline refs and standalone refs both become refs', () => {
   const inline = refs.find((r) => r.fromColumn === 'user_id');
   assert.deepEqual(
     { ...inline },
-    { fromTable: 'orders', fromColumn: 'user_id', toTable: 'users', toColumn: 'id', type: '>' },
+    { fromTable: 'orders', fromColumn: 'user_id', toTable: 'users', toColumn: 'id', type: '>', fromColumns: ['user_id'], toColumns: ['id'] },
   );
   assert.ok(refs.some((r) => r.fromTable === 'orders' && r.fromColumn === 'id' && r.type === '<'));
   assert.equal(tables[1].columns.find((c) => c.name === 'user_id').inlineRef, '> users.id');
@@ -178,7 +178,7 @@ test('a named Ref line is kept, with its name', () => {
   assert.equal(refs.length, 1);
   assert.deepEqual(
     { ...refs[0] },
-    { fromTable: 'b', fromColumn: 'a_id', toTable: 'a', toColumn: 'id', type: '>', name: 'fk_b_a' },
+    { fromTable: 'b', fromColumn: 'a_id', toTable: 'a', toColumn: 'id', type: '>', fromColumns: ['a_id'], toColumns: ['id'], name: 'fk_b_a' },
   );
 });
 
@@ -212,4 +212,33 @@ test('unnamed refs have no name', () => {
   const { refs } = parseSchema(TWO + 'Ref: b.a_id > a.id');
   assert.equal(refs.length, 1);
   assert.equal('name' in refs[0], false);
+});
+
+// ---- Composite refs (Ref: b.(x, y) > a.(x, y)) ----
+
+const PAIR_KEYS = 'Table a {\n  id int\n  k int\n}\nTable b {\n  a_id int\n  a_k int\n}\n';
+
+test('composite refs keep every column', () => {
+  const { refs, errors } = parseSchema(PAIR_KEYS + 'Ref: b.(a_id, a_k) > a.(id, k)');
+  assert.deepEqual(errors, []);
+  assert.equal(refs.length, 1);
+  assert.deepEqual(refs[0].fromColumns, ['a_id', 'a_k']);
+  assert.deepEqual(refs[0].toColumns, ['id', 'k']);
+  // the first column stays in fromColumn/toColumn for code that reads one column
+  assert.equal(refs[0].fromColumn, 'a_id');
+  assert.equal(refs[0].toColumn, 'id');
+});
+
+test('single-column refs also list their column', () => {
+  const { refs } = parseSchema(PAIR_KEYS + 'Ref: b.a_id > a.id\nTable c {\n  b_id int [ref: > b.a_id]\n}');
+  for (const r of refs) {
+    assert.deepEqual(r.fromColumns, [r.fromColumn]);
+    assert.deepEqual(r.toColumns, [r.toColumn]);
+  }
+});
+
+test('composite refs with quoted columns', () => {
+  const { refs } = parseSchema(PAIR_KEYS + 'Ref: b.("a_id", "a_k") > a.("id", "k")');
+  assert.deepEqual(refs[0].fromColumns, ['a_id', 'a_k']);
+  assert.deepEqual(refs[0].toColumns, ['id', 'k']);
 });
